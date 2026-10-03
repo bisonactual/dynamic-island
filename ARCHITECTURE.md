@@ -64,21 +64,38 @@ Sources/DynamicIsland/
   Media/
     SystemNowPlaying.swift         persistent python3+dylib streaming helper
     MediaFallback.swift            Spotify/Music + browser via AppleScript
-    MediaRemoteBridge.swift        Info struct (shared data model) + legacy bridge
     MediaKeys.swift                synthesize media keys (last-resort transport)
     PowerMonitor.swift             IOKit.ps charging detection
   Models/
+    NowPlayingInfo.swift           the shared now-playing snapshot struct
     NowPlayingModel.swift          @MainActor ObservableObject; the app's brain
-  Views/
-    IslandView.swift               SwiftUI island + NotchShape + EqualizerView +
-                                   NotchMetrics + IslandState
+  Views/                           one component per file:
+    IslandView.swift               the main island that composes the pieces
+    NotchShape.swift               the concave-top Dynamic Island shape
+    EqualizerView.swift            audio visualizer bars
+    FlippingArtwork.swift          coin-flip album art on track change
+    ChargingRing.swift             circular battery gauge + battery-color logic
+    LockIslandView.swift           static lock-screen lock icon
+    NotchMetrics.swift             notch geometry
+    IslandState.swift              shared UI state (ObservableObject)
   Window/
-    NotchController.swift          NSPanel owner; geometry, click-through, hide
+    NotchController.swift          core: panels + stored state + init; the rest is
+                                   split into extensions, one concern each:
+    NotchController+Windows.swift      builds the main + lock panels
+    NotchController+Geometry.swift     screen/notch math, positioning, display changes
+    NotchController+ClickThrough.swift mouse tracking → OS-level click-through
+    NotchController+Activation.swift   click-to-switch + frontmost suppression
+    NotchController+Charging.swift     the plug-in battery flourish
+    NotchController+Visibility.swift   hide in fullscreen, lock-screen lock icon
+    SkyLightSpace.swift            private SkyLight bridge for the lock screen
 ```
 
-`MediaRemoteBridge.Info` is the single metadata struct everything converges on:
+`NowPlayingInfo` is the single metadata struct everything converges on:
 `title, artist, album, artwork (NSImage?), artworkURL (String?), duration,
-elapsed, isPlaying (Bool?), sourceApp (String?), pid (Int?)`.
+elapsed, isPlaying (Bool?), sourceApp (String?), pid (Int?)`. (It was previously
+nested in a `MediaRemoteBridge` class whose in-process bridge was dead code — Apple
+blocks MediaRemote for the app itself — so that class was removed and the struct
+promoted to its own file.)
 
 ## 3. The window (NotchController.swift)
 
