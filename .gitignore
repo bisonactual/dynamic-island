@@ -1,0 +1,14 @@
+# Build artifacts
+.build/
+DynamicIsland.app/
+
+# Rust
+builder/target/
+
+# macOS
+.DS_Store
+
+# Xcode / SPM
+*.xcodeproj
+.swiftpm/
+Package.resolved
