@@ -19,7 +19,11 @@ struct FlippingArtwork: View {
     @State private var revealScale: CGFloat = 1   // new cover grows from the center
     @State private var flash: Double = 0          // white glint over it, fading out
 
-    private let half = 0.55   // seconds per half-flip (~1.1s total)
+    /// Seconds per half-flip. The full track-change swap takes twice this
+    /// (`flipDuration`), which other features (e.g. the charging ring) sync to.
+    static let halfFlip = 0.55
+    static var flipDuration: Double { halfFlip * 2 }
+    private var half: Double { Self.halfFlip }
 
     var body: some View {
         thumb

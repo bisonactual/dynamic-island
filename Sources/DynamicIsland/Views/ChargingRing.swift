@@ -31,7 +31,11 @@ struct ChargingRing: View {
         }
         .frame(width: size, height: size)
         .onAppear {
-            withAnimation(.easeOut(duration: 0.6)) { fill = CGFloat(level) / 100 }
+            // The ring draws itself around to the battery level, over the same time
+            // the album cover takes to flip on a track change.
+            withAnimation(.easeOut(duration: FlippingArtwork.flipDuration)) {
+                fill = CGFloat(level) / 100
+            }
         }
     }
 }
