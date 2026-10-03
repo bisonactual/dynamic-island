@@ -28,6 +28,8 @@ const INFO_PLIST: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 	<string>APPL</string>
 	<key>CFBundleExecutable</key>
 	<string>DynamicIsland</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
 	<key>LSUIElement</key>
@@ -54,6 +56,43 @@ fn run_quiet(cmd: &str, args: &[&str]) {
 		.stdout(Stdio::null())
 		.stderr(Stdio::null())
 		.status();
+}
+
+fn build_icon(resources_dir: &str) -> Res {
+	let svg = "Assets/AppIcon.svg";
+	if !Path::new(svg).exists() {
+		eprintln!("⚠︎ {svg} not found; skipping app icon");
+		return Ok(());
+	}
+
+	let work = ".build/iconwork";
+	let iconset = ".build/AppIcon.iconset";
+	let _ = fs::remove_dir_all(work);
+	let _ = fs::remove_dir_all(iconset);
+	fs::create_dir_all(work)?;
+	fs::create_dir_all(iconset)?;
+
+	run_quiet("qlmanage", &["-t", "-s", "1024", "-o", work, svg]);
+	let master = format!("{work}/AppIcon.svg.png");
+	if !Path::new(&master).exists() {
+		eprintln!("⚠︎ could not rasterize {svg}; skipping app icon");
+		return Ok(());
+	}
+
+	let sizes: [(u32, &str); 10] = [
+		(16, "icon_16x16.png"),    (32, "icon_16x16@2x.png"),
+		(32, "icon_32x32.png"),    (64, "icon_32x32@2x.png"),
+		(128, "icon_128x128.png"), (256, "icon_128x128@2x.png"),
+		(256, "icon_256x256.png"), (512, "icon_256x256@2x.png"),
+		(512, "icon_512x512.png"), (1024, "icon_512x512@2x.png"),
+	];
+	for (px, name) in sizes {
+		let px = px.to_string();
+		run_quiet("sips", &["-z", &px, &px, &master, "--out", &format!("{iconset}/{name}")]);
+	}
+
+	run("iconutil", &["-c", "icns", iconset, "-o", &format!("{resources_dir}/AppIcon.icns")])?;
+	Ok(())
 }
 
 fn ask(promt: &str) -> bool {
@@ -105,6 +144,9 @@ fn main() -> Res {
 		format!("{APP}/Contents/Resources/mrhelper.dylib"),
 	)?;
 	fs::write(format!("{APP}/Contents/Info.plist"), INFO_PLIST)?;
+
+	println!("▶︎ Building app icon…");
+	build_icon(&format!("{APP}/Contents/Resources"))?;
 
 	run_quiet("codesign", &["--force", "--deep", "--sign", "-", APP]);
 
