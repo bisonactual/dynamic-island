@@ -11,7 +11,7 @@ enum MediaFallback {
         (bundle: "com.apple.Music", app: "Music")
     ]
 
-    static func fetch() -> MediaRemoteBridge.Info? {
+    static func fetch() -> NowPlayingInfo? {
         let app = appFetch()
         if app?.isPlaying == true { return app }
         if let browser = browserFetch() { return browser }   // only returns when playing
@@ -20,8 +20,8 @@ enum MediaFallback {
 
     /// Spotify/Music only (no browser) via AppleScript — fast and authoritative,
     /// used to correct MediaRemote's laggy play/pause for those apps.
-    static func appFetch() -> MediaRemoteBridge.Info? {
-        var pausedTrack: MediaRemoteBridge.Info?
+    static func appFetch() -> NowPlayingInfo? {
+        var pausedTrack: NowPlayingInfo?
         for s in sources {
             if let info = query(bundleID: s.bundle, app: s.app) {
                 if info.isPlaying == true { return info }
@@ -63,7 +63,7 @@ enum MediaFallback {
         !NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).isEmpty
     }
 
-    private static func query(bundleID: String, app: String) -> MediaRemoteBridge.Info? {
+    private static func query(bundleID: String, app: String) -> NowPlayingInfo? {
         guard isRunning(bundleID) else { return nil }
 
         let sep = "|||"
@@ -98,7 +98,7 @@ enum MediaFallback {
         let parts = raw.components(separatedBy: sep)
         guard parts.count >= 6 else { return nil }
 
-        var info = MediaRemoteBridge.Info()
+        var info = NowPlayingInfo()
         info.title = parts[0].isEmpty ? nil : parts[0]
         info.artist = parts[1].isEmpty ? nil : parts[1]
         info.album = parts[2].isEmpty ? nil : parts[2]
@@ -133,7 +133,7 @@ enum MediaFallback {
 
     /// Read the current media from the active tab of any running, scriptable
     /// browser via the page's Media Session metadata.
-    static func browserFetch() -> MediaRemoteBridge.Info? {
+    static func browserFetch() -> NowPlayingInfo? {
         for b in browsers where isRunningByName(b.name) {
             if let info = browserQuery(name: b.name, chromium: b.chromium) { return info }
         }
@@ -151,7 +151,7 @@ enum MediaFallback {
     if(!t&&p){t=document.title;}return (p?'1':'0')+'|||'+t+'|||'+a+'|||'+art+'|||'+cur+'|||'+dur;})()
     """
 
-    private static func browserQuery(name: String, chromium: Bool) -> MediaRemoteBridge.Info? {
+    private static func browserQuery(name: String, chromium: Bool) -> NowPlayingInfo? {
         let js = mediaJS.replacingOccurrences(of: "\"", with: "\\\"")
         let command = chromium
             ? "tell application \"\(name)\" to execute front window's active tab javascript \"\(js)\""
@@ -169,7 +169,7 @@ enum MediaFallback {
         // Nothing meaningful playing in this browser.
         guard playing, !title.isEmpty else { return nil }
 
-        var info = MediaRemoteBridge.Info()
+        var info = NowPlayingInfo()
         info.title = title
         info.artist = parts.count > 2 ? parts[2] : ""
         info.isPlaying = true

@@ -128,7 +128,7 @@ final class NowPlayingModel: ObservableObject {
     }
 
     /// Handle one streamed system snapshot (called off the main thread).
-    private func handleStreamUpdate(_ sysInfo: MediaRemoteBridge.Info?) {
+    private func handleStreamUpdate(_ sysInfo: NowPlayingInfo?) {
         fallbackQueue.async { [weak self] in
             // Spotify/Music report play/pause instantly via AppleScript, while
             // MediaRemote lags ~1s. For the same track, trust the app's state. This
@@ -142,8 +142,8 @@ final class NowPlayingModel: ObservableObject {
         }
     }
 
-    nonisolated private static func reconcile(system: MediaRemoteBridge.Info?,
-                                              app: MediaRemoteBridge.Info?) -> MediaRemoteBridge.Info? {
+    nonisolated private static func reconcile(system: NowPlayingInfo?,
+                                              app: NowPlayingInfo?) -> NowPlayingInfo? {
         guard let app else { return system }           // only the system source (e.g. a browser)
         if let sys = system, sameTrack(sys, app) {
             return app                                 // same track → app state is authoritative + instant
@@ -154,7 +154,7 @@ final class NowPlayingModel: ObservableObject {
         return system ?? app
     }
 
-    nonisolated private static func sameTrack(_ a: MediaRemoteBridge.Info, _ b: MediaRemoteBridge.Info) -> Bool {
+    nonisolated private static func sameTrack(_ a: NowPlayingInfo, _ b: NowPlayingInfo) -> Bool {
         func norm(_ s: String?) -> String {
             (s ?? "").trimmingCharacters(in: .whitespaces).lowercased()
         }
@@ -162,7 +162,7 @@ final class NowPlayingModel: ObservableObject {
         return !ta.isEmpty && ta == norm(b.title)
     }
 
-    private func apply(_ info: MediaRemoteBridge.Info) {
+    private func apply(_ info: NowPlayingInfo) {
         let newTitle = info.title ?? ""
         let trackChanged = newTitle != title || (info.album ?? "") != album
         let wasPlaying = isPlaying

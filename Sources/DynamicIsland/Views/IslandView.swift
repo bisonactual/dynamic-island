@@ -1,246 +1,10 @@
 import SwiftUI
+import AppKit
 
-/// Geometry of the physical notch (or the synthetic pill on notch-less screens),
-/// plus the size the island grows to when expanded.
-struct NotchMetrics {
-    var notchWidth: CGFloat
-    var notchHeight: CGFloat
-    var hasNotch: Bool
-
-    var collapsedSidePadding: CGFloat { 30 }   // content peeking on each side of the notch when playing
-    var collapsedHeight: CGFloat { max(notchHeight, 24) }
-    var collapsedWidth: CGFloat { notchWidth + collapsedSidePadding * 2 }
-    var collapsedCornerRadius: CGFloat { 11 }  // roughly matches the notch's own corners
-    var bottomExtension: CGFloat { 1 }         // extra px so the pill's bottom lines up with the notch
-    var restHeight: CGFloat { notchHeight + bottomExtension }
-
-    var expandedWidth: CGFloat { 412 }
-    var expandedHeight: CGFloat { 146 }
-    var expandedCornerRadius: CGFloat { 28 }   // bottom corners
-    var expandedTopRadius: CGFloat { 22 }      // concave top flare (also insets the body)
-
-    /// How far below the top the expanded content should start, so it clears the notch.
-    var expandedTopInset: CGFloat { notchHeight + 4 }
-
-    /// Extra room around the expanded panel so the glow isn't clipped.
-    var glowMargin: CGFloat { 45 }
-
-    /// The window is sized tightly to the current island state so it only ever
-    /// intercepts clicks over (and just around) the island — never the menu-bar
-    /// icons beside the notch, and never the dead area where it *would* expand.
-    func windowSize(expanded: Bool, playing: Bool) -> CGSize {
-        if expanded {
-            return CGSize(width: expandedWidth + glowMargin * 2,
-                          height: expandedHeight + glowMargin + 18)
-        }
-        let w = playing ? collapsedWidth : notchWidth
-        return CGSize(width: w + 6, height: restHeight + 6)
-    }
-
-    /// The largest the window ever gets — the hosting view is built at this size.
-    var maxWindowSize: CGSize {
-        CGSize(width: expandedWidth + glowMargin * 2, height: expandedHeight + glowMargin + 18)
-    }
-}
-
-/// UI state shared with the window controller (so it can resize the window when
-/// the island expands).
-@MainActor
-final class IslandState: ObservableObject {
-    @Published var expanded = false
-    @Published var metrics: NotchMetrics
-
-    /// Battery %, shown briefly as a "charging" flourish after plugging in.
-    @Published var chargingFlourish: Int?
-
-    /// Hide the music pop-out while the playing app is already frontmost.
-    @Published var suppressedForFrontmost = false
-
-    /// Clicking the music pop-out switches to the playing app.
-    var onTapIsland: (() -> Void)?
-
-    /// Whether a non-music activity currently wants the island popped out.
-    var hasCollapsedActivity: Bool { chargingFlourish != nil }
-
-    init(metrics: NotchMetrics) { self.metrics = metrics }
-}
-
-/// The classic Dynamic Island shape: bottom corners are convex (normal rounding),
-/// while the top corners are *concave* — scooped inward toward the screen — so the
-/// island looks like it flares out of the display edge. A `topRadius` of 0 gives a
-/// flush, square top (used for the collapsed pill that merges with the notch).
-struct NotchShape: Shape {
-    var topRadius: CGFloat
-    var bottomRadius: CGFloat
-
-    func path(in rect: CGRect) -> Path {
-        let t = min(topRadius, min(rect.width, rect.height) / 2)
-        let b = min(bottomRadius, min(rect.width, rect.height) / 2)
-        var p = Path()
-
-        // Full-width top edge — the black reaches the screen corners.
-        p.move(to: CGPoint(x: rect.minX, y: rect.minY))
-        p.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
-        // Top-right: concave flare inward from the corner to the (inset) body side.
-        p.addQuadCurve(to: CGPoint(x: rect.maxX - t, y: rect.minY + t),
-                       control: CGPoint(x: rect.maxX - t, y: rect.minY))
-        // Right body side down.
-        p.addLine(to: CGPoint(x: rect.maxX - t, y: rect.maxY - b))
-        // Bottom-right convex corner.
-        p.addQuadCurve(to: CGPoint(x: rect.maxX - t - b, y: rect.maxY),
-                       control: CGPoint(x: rect.maxX - t, y: rect.maxY))
-        // Bottom edge.
-        p.addLine(to: CGPoint(x: rect.minX + t + b, y: rect.maxY))
-        // Bottom-left convex corner.
-        p.addQuadCurve(to: CGPoint(x: rect.minX + t, y: rect.maxY - b),
-                       control: CGPoint(x: rect.minX + t, y: rect.maxY))
-        // Left body side up.
-        p.addLine(to: CGPoint(x: rect.minX + t, y: rect.minY + t))
-        // Top-left: concave flare back out to the corner.
-        p.addQuadCurve(to: CGPoint(x: rect.minX, y: rect.minY),
-                       control: CGPoint(x: rect.minX + t, y: rect.minY))
-        p.closeSubpath()
-        return p
-    }
-}
-
-/// Smooth, organic equalizer bars shown while audio plays.
-///
-/// Driven by `TimelineView(.animation)`, which advances only while `active` (it is
-/// `paused` otherwise) — so it costs nothing when nothing is playing. Each bar has
-/// its own frequency and phase so the motion looks lively rather than uniform.
-struct EqualizerView: View {
-    var color: Color
-    var active: Bool
-
-    private let barCount = 5
-    private let barWidth: CGFloat = 2.5
-    private let spacing: CGFloat = 2
-    private let maxHeight: CGFloat = 16
-    private let minHeight: CGFloat = 3
-
-    var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 24.0, paused: !active)) { timeline in
-            let t = timeline.date.timeIntervalSinceReferenceDate
-            HStack(alignment: .center, spacing: spacing) {
-                ForEach(0..<barCount, id: \.self) { i in
-                    Capsule()
-                        .fill(color)
-                        .frame(width: barWidth, height: height(bar: i, time: t))
-                }
-            }
-            .frame(height: maxHeight)
-            .animation(.easeOut(duration: 0.08), value: active)
-        }
-    }
-
-    private func height(bar i: Int, time t: Double) -> CGFloat {
-        guard active else { return minHeight }
-        // Two detuned sine waves per bar → a fuller, less mechanical bounce.
-        let freq = 5.0 + Double(i) * 1.6
-        let phase = Double(i) * 0.8
-        let a = sin(t * freq + phase)
-        let b = sin(t * freq * 0.5 + phase * 1.7)
-        let level = (a * 0.65 + b * 0.35 + 1) / 2          // 0…1
-        let eased = level * level * (3 - 2 * level)         // smoothstep for softer peaks
-        return minHeight + CGFloat(eased) * (maxHeight - minHeight)
-    }
-}
-
-/// Static, non-interactive island shown on the lock screen: a notch-sized black
-/// pill with a lock icon peeking to the left of the notch. Lives in its own panel
-/// (see `NotchController.buildLockWindow`), so it carries no live state.
-struct LockIslandView: View {
-    let metrics: NotchMetrics
-
-    private var shape: NotchShape {
-        NotchShape(topRadius: 0, bottomRadius: metrics.collapsedCornerRadius)
-    }
-
-    var body: some View {
-        shape
-            .fill(Color.black)
-            .frame(width: metrics.collapsedWidth, height: metrics.restHeight)
-            .overlay(alignment: .top) {
-                HStack(spacing: 0) {
-                    Image(systemName: "lock.fill")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .frame(width: metrics.collapsedSidePadding, alignment: .center)
-                    Spacer(minLength: metrics.notchWidth)
-                    Color.clear.frame(width: metrics.collapsedSidePadding)
-                }
-                .frame(width: metrics.collapsedWidth, height: metrics.restHeight)
-            }
-            .clipShape(shape)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-    }
-}
-
-/// Album art that does a coin/card flip on track change: the current cover
-/// rotates edge-on around the vertical axis, the image is swapped at 90° (while
-/// it has zero width, so no mirrored back is ever seen), then the new cover
-/// rotates back to face front.
-struct FlippingArtwork: View {
-    let image: NSImage?
-    let token: Int
-    /// true = advanced a song (flip toward the right), false = went back (left).
-    let forward: Bool
-    let size: CGFloat
-    let corner: CGFloat
-
-    @State private var shown: NSImage?
-    @State private var angle: Double = 0
-    @State private var started = false
-    @State private var revealScale: CGFloat = 1   // new cover grows from the center
-    @State private var flash: Double = 0          // white glint over it, fading out
-
-    private let half = 0.55   // seconds per half-flip (~1.1s total)
-
-    var body: some View {
-        thumb
-            .rotation3DEffect(.degrees(angle), axis: (x: 0, y: 1, z: 0), perspective: 0.6)
-            .onAppear { if !started { shown = image; started = true } }
-            .onChange(of: token) { _, _ in flip() }
-    }
-
-    private func flip() {
-        let s: Double = forward ? 1 : -1                        // direction of spin
-        withAnimation(.easeIn(duration: half)) { angle = 90 * s }   // turn edge-on
-        DispatchQueue.main.asyncAfter(deadline: .now() + half) {
-            shown = image                                        // swap while invisible
-            angle = -90 * s
-            // Reveal: the flipped face starts as a white glint, and the new cover
-            // springs out from the center as the white fades — before it's fully shown.
-            revealScale = 0.2
-            flash = 0.95
-            withAnimation(.easeOut(duration: half)) { angle = 0 }
-            withAnimation(.spring(response: half + 0.1, dampingFraction: 0.7)) { revealScale = 1 }
-            withAnimation(.easeOut(duration: half * 0.9)) { flash = 0 }
-        }
-    }
-
-    @ViewBuilder private var thumb: some View {
-        Group {
-            if let art = shown {
-                Image(nsImage: art).resizable().aspectRatio(contentMode: .fill)
-            } else {
-                RoundedRectangle(cornerRadius: corner)
-                    .fill(Color.white.opacity(0.12))
-                    .overlay(
-                        Image(systemName: "music.note")
-                            .font(.system(size: size * 0.4))
-                            .foregroundStyle(.white.opacity(0.5))
-                    )
-            }
-        }
-        .frame(width: size, height: size)
-        .scaleEffect(revealScale)                       // grows out from the center
-        .overlay(Color.white.opacity(flash))            // white glint on top, fading
-        .clipShape(RoundedRectangle(cornerRadius: corner))
-    }
-}
-
+/// The main island view: the black notch pill plus whatever activity is currently
+/// showing (music, charging). Individual pieces live in their own files:
+/// `NotchShape`, `EqualizerView`, `FlippingArtwork`, `ChargingRing`,
+/// `LockIslandView`, `NotchMetrics`, `IslandState`.
 struct IslandView: View {
     @ObservedObject var model: NowPlayingModel
     @ObservedObject var state: IslandState
@@ -361,10 +125,10 @@ struct IslandView: View {
                 .scaleEffect(musicDimmed ? 0.65 : 1)
                 .opacity(musicDimmed ? 0.5 : 1)
                 .animation(.easeOut(duration: 0.3), value: musicDimmed)
-        case .charging:
+        case .charging(let level):
             Image(systemName: "bolt.fill")
                 .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(.green)
+                .foregroundStyle(ChargingRing.color(for: level))
         case .none:
             EmptyView()
         }
@@ -378,9 +142,8 @@ struct IslandView: View {
                 .opacity(musicDimmed ? 0.5 : 1)
                 .animation(.easeOut(duration: 0.3), value: musicDimmed)
         case .charging(let level):
-            Text("\(level)%")
-                .font(.system(size: 11, weight: .semibold).monospacedDigit())
-                .foregroundStyle(.white)
+            ChargingRing(level: level, color: ChargingRing.color(for: level),
+                         size: m.notchHeight - 6)
         case .none:
             EmptyView()
         }
@@ -399,7 +162,7 @@ struct IslandView: View {
         HStack(spacing: 16) {
             Image(systemName: "bolt.fill")
                 .font(.system(size: 26))
-                .foregroundStyle(.green)
+                .foregroundStyle(ChargingRing.color(for: level))
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(level)%")
                     .font(.system(size: 22, weight: .bold))

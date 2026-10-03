@@ -32,12 +32,12 @@ final class SystemNowPlaying {
 
     private var streamProcess: Process?
     private var buffer = Data()
-    private var onUpdate: ((MediaRemoteBridge.Info?) -> Void)?
+    private var onUpdate: ((NowPlayingInfo?) -> Void)?
     private var stopped = false
 
     /// Start streaming now-playing metadata. `onUpdate` is called (off the main
     /// thread) with each snapshot, or nil when nothing is playing.
-    func start(onUpdate: @escaping (MediaRemoteBridge.Info?) -> Void) {
+    func start(onUpdate: @escaping (NowPlayingInfo?) -> Void) {
         guard Self.dylibPath != nil else { return }
         self.onUpdate = onUpdate
         launch()
@@ -118,11 +118,11 @@ final class SystemNowPlaying {
         return String(data: data, encoding: .utf8)
     }
 
-    private static func parse(_ data: Data) -> MediaRemoteBridge.Info? {
+    private static func parse(_ data: Data) -> NowPlayingInfo? {
         guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let title = obj["title"] as? String, !title.isEmpty
         else { return nil }
-        var info = MediaRemoteBridge.Info()
+        var info = NowPlayingInfo()
         info.title = title
         info.artist = (obj["artist"] as? String).flatMap { $0.isEmpty ? nil : $0 }
         info.album = (obj["album"] as? String).flatMap { $0.isEmpty ? nil : $0 }
