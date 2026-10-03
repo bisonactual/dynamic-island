@@ -12,3 +12,7 @@ builder/target/
 *.xcodeproj
 .swiftpm/
 Package.resolved
+
+
+CLAUDE.md
+AGENT.md
