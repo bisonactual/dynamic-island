@@ -58,13 +58,30 @@ fn run_quiet(cmd: &str, args: &[&str]) {
 		.status();
 }
 
+/// Whether to embed the custom app icon. The `DI_ICON` env var wins so the choice
+/// can be made permanent without being prompted — set it in `.cargo/config.toml`'s
+/// `[env]` section (DI_ICON = "1" to always add it, "0" to always skip). When unset
+/// (or anything else), it asks interactively.
+fn want_icon() -> bool {
+	match std::env::var("DI_ICON").unwrap_or_default().to_lowercase().as_str() {
+		"1" | "true" | "yes" | "always" => true,
+		"0" | "false" | "no" | "never" => false,
+		_ => ask("Use the custom app icon?"),
+	}
+}
+
 fn build_icon(resources_dir: &str) -> Res {
+	if !want_icon() {
+		return Ok(());
+	}
+
 	let svg = "Assets/AppIcon.svg";
 	if !Path::new(svg).exists() {
 		eprintln!("⚠︎ {svg} not found; skipping app icon");
 		return Ok(());
 	}
 
+	println!("▶︎ Building app icon…");
 	let work = ".build/iconwork";
 	let iconset = ".build/AppIcon.iconset";
 	let _ = fs::remove_dir_all(work);
@@ -91,24 +108,24 @@ fn build_icon(resources_dir: &str) -> Res {
 		run_quiet("sips", &["-z", &px, &px, &master, "--out", &format!("{iconset}/{name}")]);
 	}
 
-	run("iconutil", &["-c", "icns", iconset, "-o", &format!("{resources_dir}/AppIcon.icns")])?;
+	// Pack into .icns — but never fail the whole build over the icon.
+	let icns = format!("{resources_dir}/AppIcon.icns");
+	run_quiet("iconutil", &["-c", "icns", iconset, "-o", &icns]);
+	if !Path::new(&icns).exists() {
+		eprintln!("⚠︎ could not build AppIcon.icns; the app will use the default icon");
+	}
 	Ok(())
 }
 
-fn ask(promt: &str) -> bool {
-	print!("{} [y/N] ", promt);
-	io::stdout()
-		.flush()
-		.ok();
-	
-	let mut anwser = String::new();
-	io::stdin()
-    .read_line(&mut anwser)
-    .ok();
+fn ask(prompt: &str) -> bool {
+	print!("{} [y/N] ", prompt);
+	io::stdout().flush().ok();
 
-	matches!(anwser.trim(), "y" | "Y")
+	let mut answer = String::new();
+	io::stdin().read_line(&mut answer).ok();
+
+	matches!(answer.trim(), "y" | "Y")
 }
-
 
 fn main() -> Res {
 	let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
@@ -145,7 +162,6 @@ fn main() -> Res {
 	)?;
 	fs::write(format!("{APP}/Contents/Info.plist"), INFO_PLIST)?;
 
-	println!("▶︎ Building app icon…");
 	build_icon(&format!("{APP}/Contents/Resources"))?;
 
 	run_quiet("codesign", &["--force", "--deep", "--sign", "-", APP]);
