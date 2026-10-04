@@ -43,6 +43,16 @@ if you wan to open the app later do
 ```bash
 open DynamicIsland.app
 ```
+if u r a lazy bum build the bash script with
+
+```bash
+chmod +x build.sh
+```
+then do
+
+```bash
+./build.sh
+```
 
 ## Misc
 

@@ -58,9 +58,8 @@ builder/                           Rust build tool (replaces the old build_app.s
 Helpers/mrhelper.c                 C bridge to the private MediaRemote framework
 Sources/DynamicIsland/
   App/
-    main.swift                     entry point
+    main.swift                     entry point (sets .accessory activation policy)
     AppDelegate.swift              NSApplication delegate; menu-bar item + menu
-    Log.swift                      debug logger → /tmp/dynamicisland.log (removable)
   Media/
     SystemNowPlaying.swift         persistent python3+dylib streaming helper
     MediaFallback.swift            Spotify/Music + browser via AppleScript
@@ -104,10 +103,9 @@ promoted to its own file.)
 - Level = `CGWindowLevelForKey(.statusWindow)` so it floats above the menu bar.
 - `collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary,
   .ignoresCycle]`.
-- The window is a **fixed large size** (`maxWindowSize`, big enough for the
-  dead/legacy expanded panel + glow) and never moves — it stays centered on the
-  notch, top-aligned. Content inside sizes itself; the window does not resize per
-  state anymore.
+- The window is a **fixed large size** (`maxWindowSize`, a canvas with margin for
+  the pop-out plus breathing room) and never moves — it stays centered on the
+  notch, top-aligned. Content inside sizes itself; the window never resizes.
 - Hosts a single SwiftUI `IslandView` via `NSHostingView`.
 
 ### Notch geometry
@@ -118,11 +116,12 @@ and `notchHeight` from the top safe-area inset. On a notch-less Mac it synthesiz
 a ~190×32 floating pill. Re-derived on `didChangeScreenParametersNotification`.
 
 ### Click-through (important, subtle)
-The panel must not steal clicks meant for apps underneath it (menu-bar icons next
-to the notch, the dead area where an old expanded panel used to be). Approach:
+The panel must not steal clicks meant for apps underneath it (the menu-bar icons
+next to the notch, and the rest of the fixed canvas around the pop-out). Approach:
 - `panel.ignoresMouseEvents` starts `true` (fully click-through).
 - A **global** + **local** `NSEvent` mouse monitor (`mouseMoved`,
-  `leftMouseDragged`) calls `updateForPointer()`.
+  `leftMouseDragged`) calls `updateForPointer()`, which tests the cached
+  `poppedNotchRect` (no per-move geometry recompute).
 - `updateForPointer()` sets `ignoresMouseEvents = false` **only** while the pop-out
   is shown *and* the pointer is within the notch rect (`insetBy -4`). Everything
   else passes through at the OS level.
@@ -294,11 +293,10 @@ flipping in and then blinking to the new one.
   attempts — a scale+cross-dissolve, then a pure opacity dissolve — were replaced
   because scaling two different covers that overlap reads as an *accidental* flip;
   the user wanted a deliberate flip instead.)
-- There is a full **expanded** panel (`musicExpanded`, `chargingExpanded`) with
-  artwork, title/artist, scrubber and transport buttons. `state.expanded` is
-  **always false** now (hover-expand was removed) — this is **dead code** kept
-  around; a cleanup could remove it along with `expandedWidth/Height`,
-  `windowSize(...)`, the buttons rect in `regions()`, etc.
+- The island is collapsed-only — there is no hover/expanded panel anymore (it was
+  removed along with `state.expanded`, `regions()`, `windowSize(...)` and the
+  expanded `NotchMetrics` fields). A click switches to the playing app instead; the
+  pop-out hit-rect is cached in `NotchController.poppedNotchRect`.
 
 ## 7. "Leaving a video" vs "pausing" (recent fix)
 
@@ -357,8 +355,8 @@ Implementation:
     `SkyLightSpace.shared?.add(window: lockPanel)`. On **unlock**: `orderOut`.
 - The old per-activity lock UI was removed from `IslandView`/`IslandState`
   (`Activity.locked`, the `lock.fill` cases, `IslandState.locked`), and
-  `state.locked` was dropped from `popoutShown` / `regions()` — the lock screen is
-  now entirely the separate panel's job.
+  `state.locked` was dropped from `popoutShown` — the lock screen is now entirely
+  the separate panel's job.
 
 Ruled out alternatives (for the record): plain higher window levels /
 `CGShieldingWindowLevel` (behind the curtain); `ScreenSaver.framework`
@@ -374,7 +372,6 @@ are private and may change across macOS releases — hence the fail-silently des
 - `PowerMonitor.swift` — IOKit.ps; `onPlugChange(Bool)` callback + `level` (battery
   %). An `initialized` flag suppresses the first reading so the flourish doesn't
   fire at launch.
-- `Log.swift` — appends to `/tmp/dynamicisland.log`. Debug-only; safe to delete.
 - `MediaKeys.swift` — synthesizes NX media keys as the last-resort transport.
 
 ## 10. Build & run
@@ -411,8 +408,10 @@ and `NSAppleEventsUsageDescription` (the Automation prompt for Spotify/Music).
 - Keep content in an overlay clipped to the shape; never let content drive the
   black shape's size, or the slide-reveal breaks and the pill mis-sizes.
 - Concurrency: stream parsing is off-main; UI mutations hop to `@MainActor`.
-  `reconcile`/`sameTrack` are `nonisolated static`; Task closures capture
-  `[weak self]`.
-- The expanded-panel path is dead (hover removed) but still compiled — treat as
-  removable, but check `regions()`/`NotchMetrics`/`windowSize` references first.
+  `reconcile`/`sameTrack`/`accentColor` are `nonisolated static`; Task closures
+  capture `[weak self]`. `accentColor` runs off-main (it calls `tiffRepresentation`,
+  which is heavy — don't move it back onto the main thread).
+- The AppleScript reconcile (`appFetch`) is skipped entirely when idle
+  (`sysInfo == nil && !hasMedia`); don't reintroduce unconditional per-tick
+  AppleScript — it scripts Spotify/Music every second just because they're open.
 ```
