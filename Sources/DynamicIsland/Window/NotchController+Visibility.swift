@@ -13,13 +13,15 @@ extension NotchController {
         // Lock / unlock the screen → show / hide the lock-screen lock icon.
         let dnc = DistributedNotificationCenter.default()
         dnc.addObserver(forName: .init("com.apple.screenIsLocked"), object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor in Log.write("screenIsLocked"); self?.setLocked(true) }
+            Task { @MainActor in self?.setLocked(true) }
         }
         dnc.addObserver(forName: .init("com.apple.screenIsUnlocked"), object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor in Log.write("screenIsUnlocked"); self?.setLocked(false) }
+            Task { @MainActor in self?.setLocked(false) }
         }
-        // Safety net for cases the notifications don't cover.
-        visibilityTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
+        // Safety net for the rare case the space-change notification is missed. The
+        // notification handles the normal enter/exit instantly, so this can be slow
+        // (polling CGWindowList more often is pure waste).
+        visibilityTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.updateVisibility() }
         }
         updateVisibility()

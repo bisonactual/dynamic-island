@@ -61,10 +61,11 @@ final class NowPlayingModel: ObservableObject {
         guard let url = URL(string: urlString) else { return }
         URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
             guard let data, let image = NSImage(data: data) else { return }
+            let color = Self.accentColor(from: image)   // compute off-main (dataTask completion)
             Task { @MainActor in
                 guard let self, self.lastArtworkKey == urlString else { return }
                 self.artwork = image
-                self.accent = Self.accentColor(from: image)
+                self.accent = color
             }
         }.resume()
     }
@@ -73,10 +74,11 @@ final class NowPlayingModel: ObservableObject {
     private func loadSystemArtwork(forToken token: String) {
         DispatchQueue.global(qos: .utility).async { [weak self] in
             let image = SystemNowPlaying.fetchArtwork()
+            let color = image.map { Self.accentColor(from: $0) } ?? .white   // compute off-main
             Task { @MainActor in
                 guard let self, self.title == token else { return }
                 self.artwork = image
-                self.accent = image.map { Self.accentColor(from: $0) } ?? .white
+                self.accent = color
             }
         }
     }
@@ -129,15 +131,26 @@ final class NowPlayingModel: ObservableObject {
 
     /// Handle one streamed system snapshot (called off the main thread).
     private func handleStreamUpdate(_ sysInfo: NowPlayingInfo?) {
-        fallbackQueue.async { [weak self] in
-            // Spotify/Music report play/pause instantly via AppleScript, while
-            // MediaRemote lags ~1s. For the same track, trust the app's state. This
-            // also covers a source still playing behind a paused browser tab.
-            let app = MediaFallback.appFetch()
-            let chosen = Self.reconcile(system: sysInfo, app: app)
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                if let chosen { self.apply(chosen) } else { self.clear() }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            // True idle: nothing in the system now-playing and nothing shown. Clear
+            // without touching AppleScript — otherwise we'd script Spotify/Music every
+            // second, 24/7, just because those apps happen to be open.
+            if sysInfo == nil && !self.hasMedia {
+                self.clear()
+                return
+            }
+            // Something is (or was) playing: reconcile with the instant Spotify/Music
+            // state off-main, then apply. Spotify/Music report play/pause instantly via
+            // AppleScript while MediaRemote lags ~1s; for the same track we trust the
+            // app. This also covers a source still playing behind a paused browser tab.
+            self.fallbackQueue.async { [weak self] in
+                let app = MediaFallback.appFetch()
+                let chosen = Self.reconcile(system: sysInfo, app: app)
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    if let chosen { self.apply(chosen) } else { self.clear() }
+                }
             }
         }
     }
@@ -245,7 +258,7 @@ final class NowPlayingModel: ObservableObject {
 
     func togglePlayPause() {
         control(appleScript: "playpause", mediaKey: .playPause)
-        isPlaying.toggle()          // optimistic; corrected by the refresh below
+        isPlaying.toggle()          // optimistic; the stream corrects it within ~1s
         lastUpdate = Date()
     }
 
@@ -280,14 +293,10 @@ final class NowPlayingModel: ObservableObject {
 
     // MARK: Helpers
 
-    static func time(_ seconds: Double) -> String {
-        guard seconds.isFinite, seconds >= 0 else { return "0:00" }
-        let s = Int(seconds)
-        return String(format: "%d:%02d", s / 60, s % 60)
-    }
-
     /// Downscale the artwork to 1px and read the pixel to get a representative color.
-    static func accentColor(from image: NSImage) -> Color {
+    /// `nonisolated` so artwork sources can compute it off the main thread (it only
+    /// touches the passed-in image, no actor state).
+    nonisolated static func accentColor(from image: NSImage) -> Color {
         guard let tiff = image.tiffRepresentation,
               let bitmap = NSBitmapImageRep(data: tiff),
               let small = NSBitmapImageRep(

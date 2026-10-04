@@ -28,36 +28,25 @@ extension NotchController {
         return NotchMetrics(notchWidth: 190, notchHeight: 32, hasNotch: false)
     }
 
-    /// The island's regions in global screen coordinates.
-    func regions() -> (notch: CGRect, panel: CGRect, buttons: CGRect)? {
-        guard let screen = Self.targetScreen() else { return nil }
-        let m = state.metrics
-        let top = screen.frame.maxY
-        let cx = screen.frame.midX
-
-        let poppedOut = model.isPlaying || model.pausedLingering || state.hasCollapsedActivity
-        let collapsedW = poppedOut ? m.collapsedWidth : m.notchWidth
-        let notch = CGRect(x: cx - collapsedW / 2, y: top - m.restHeight,
-                           width: collapsedW, height: m.restHeight)
-        let panelRect = CGRect(x: cx - m.expandedWidth / 2, y: top - m.expandedHeight,
-                               width: m.expandedWidth, height: m.expandedHeight)
-        // Transport buttons live along the visual bottom of the expanded panel.
-        let bW: CGFloat = 250, bH: CGFloat = 60
-        let buttons = CGRect(x: cx - bW / 2, y: top - m.expandedHeight, width: bW, height: bH)
-        return (notch, panelRect, buttons)
-    }
-
-    /// The window is a fixed size (large enough for the expanded panel plus glow)
-    /// and never moves — it stays centered on the notch. Click-through handles the
-    /// rest, so the fixed size blocks nothing around it.
+    /// The window is a fixed size (large enough for the glow margin) and never
+    /// moves — it stays centered on the notch. Click-through handles the rest, so
+    /// the fixed size blocks nothing around it. Also caches the popped-out notch
+    /// rect used by the mouse-move click-through check.
     func positionWindow() {
         guard let screen = Self.targetScreen() else { return }
-        let size = state.metrics.maxWindowSize
+        let m = state.metrics
+        let size = m.maxWindowSize
         let x = screen.frame.midX - size.width / 2
         let y = screen.frame.maxY - size.height   // top-aligned
         let frame = NSRect(x: x, y: y, width: size.width, height: size.height)
         panel.setFrame(frame, display: true)
         lockPanel?.setFrame(frame, display: false)
+
+        // The clickable pop-out only ever appears at its popped-out width, so cache
+        // that rect here instead of recomputing it on every mouse move.
+        poppedNotchRect = CGRect(x: screen.frame.midX - m.collapsedWidth / 2,
+                                 y: screen.frame.maxY - m.restHeight,
+                                 width: m.collapsedWidth, height: m.restHeight)
     }
 
     func observeScreenChanges() {

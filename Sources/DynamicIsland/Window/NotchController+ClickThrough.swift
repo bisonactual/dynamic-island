@@ -19,14 +19,14 @@ extension NotchController {
     }
 
     func updateForPointer() {
-        guard !hiddenForFullscreen, popoutShown, let r = regions() else {
+        guard !hiddenForFullscreen, popoutShown else {
             panel.ignoresMouseEvents = true
             return
         }
         // Capture clicks only while the pointer is over the visible pop-out, so a
         // click can switch to the playing app. Everything else passes through.
         let p = NSEvent.mouseLocation
-        panel.ignoresMouseEvents = !r.notch.insetBy(dx: -4, dy: -4).contains(p)
+        panel.ignoresMouseEvents = !poppedNotchRect.insetBy(dx: -4, dy: -4).contains(p)
     }
 
     /// Whether the clickable pop-out is currently on screen.

@@ -31,6 +31,9 @@ final class NotchController {
     var mouseMonitors: [Any] = []
     var visibilityTimer: Timer?
     var hiddenForFullscreen = false
+    /// The popped-out notch rect in global screen coords, recomputed only when the
+    /// window is positioned — so the hot mouse-move path is just a `contains` check.
+    var poppedNotchRect: CGRect = .zero
 
     let power = PowerMonitor()
     var chargingClearWork: DispatchWorkItem?
