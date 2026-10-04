@@ -14,7 +14,8 @@ enum ArtworkImageTests {
                                 bitsPerComponent: 8, bytesPerRow: width * 4,
                                 space: CGColorSpace(name: CGColorSpace.sRGB)!,
                                 bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
-        context.setFillColor(CGColor(red: 1, green: 0, blue: 0, alpha: alpha))
+        context.setFillColor(CGColor(colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                     components: [1, 0, 0, alpha])!)
         context.fill(CGRect(x: 0, y: 0, width: width, height: height))
         let data = NSMutableData()
         let destination = CGImageDestinationCreateWithData(data, UTType.tiff.identifier as CFString, 1, nil)!
@@ -43,7 +44,7 @@ enum ArtworkImageTests {
 
             let red = ArtworkImage.representativeColor(from: large)!.usingColorSpace(.sRGB)!
             check(red.redComponent > 0.98 && red.greenComponent < 0.02 && red.blueComponent < 0.02,
-                  "RGB channels changed")
+                  "RGB channels changed: \(red)")
             let translucent = ArtworkImage.decode(fixture(width: 32, height: 32, alpha: 0.5))!
             let color = ArtworkImage.representativeColor(from: translucent)!.usingColorSpace(.sRGB)!
             check(color.redComponent > 0.98 && abs(color.alphaComponent - 0.5) < 0.02,
