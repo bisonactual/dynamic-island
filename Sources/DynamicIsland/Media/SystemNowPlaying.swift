@@ -90,7 +90,7 @@ final class SystemNowPlaying {
         let code = "import ctypes; ctypes.CDLL(\(pyString(dylib))).mr_get_artwork()"
         guard let out = runPythonOnce(code)?.trimmingCharacters(in: .whitespacesAndNewlines),
               !out.isEmpty, let data = Data(base64Encoded: out) else { return nil }
-        return NSImage(data: data)
+        return ArtworkImage.decode(data)
     }
 
     /// Send a MediaRemote transport command (0 play, 1 pause, 2 toggle, 4 next, 5 prev).

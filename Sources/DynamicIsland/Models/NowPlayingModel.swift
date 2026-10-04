@@ -60,7 +60,7 @@ final class NowPlayingModel: ObservableObject {
     private func loadArtwork(from urlString: String) {
         guard let url = URL(string: urlString) else { return }
         URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
-            guard let data, let image = NSImage(data: data) else { return }
+            guard let data, let image = ArtworkImage.decode(data) else { return }
             let color = Self.accentColor(from: image)   // compute off-main (dataTask completion)
             Task { @MainActor in
                 guard let self, self.lastArtworkKey == urlString else { return }
@@ -297,22 +297,8 @@ final class NowPlayingModel: ObservableObject {
     /// `nonisolated` so artwork sources can compute it off the main thread (it only
     /// touches the passed-in image, no actor state).
     nonisolated static func accentColor(from image: NSImage) -> Color {
-        guard let tiff = image.tiffRepresentation,
-              let bitmap = NSBitmapImageRep(data: tiff),
-              let small = NSBitmapImageRep(
-                bitmapDataPlanes: nil, pixelsWide: 1, pixelsHigh: 1,
-                bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
-                isPlanar: false, colorSpaceName: .deviceRGB,
-                bytesPerRow: 4, bitsPerPixel: 32)
+        guard let c = ArtworkImage.representativeColor(from: image)
         else { return .white }
-
-        NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: small)
-        NSGraphicsContext.current?.imageInterpolation = .high
-        bitmap.draw(in: NSRect(x: 0, y: 0, width: 1, height: 1))
-        NSGraphicsContext.restoreGraphicsState()
-
-        guard let c = small.colorAt(x: 0, y: 0) else { return .white }
 
         // Brighten so it reads well as an accent on dark chrome.
         var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0

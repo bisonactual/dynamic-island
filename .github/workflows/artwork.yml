@@ -1,0 +1,13 @@
+name: Artwork memory checks
+on: [push, pull_request, workflow_dispatch]
+jobs:
+  macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build macOS app
+        run: swift build -c release
+      - name: Test artwork decoding and colour sampling
+        run: |
+          swiftc Sources/DynamicIsland/Media/ArtworkImage.swift Tests/ArtworkImageTests.swift -o "$RUNNER_TEMP/artwork-tests"
+          "$RUNNER_TEMP/artwork-tests"
