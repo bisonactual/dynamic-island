@@ -7,9 +7,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Agent app: no Dock icon, no main window.
-        NSApp.setActivationPolicy(.accessory)
-
+        // Activation policy (.accessory — agent app, no Dock icon) is set in main.swift
+        // before the app launches.
         controller = NotchController(model: model)
         model.start()
         setupStatusItem()

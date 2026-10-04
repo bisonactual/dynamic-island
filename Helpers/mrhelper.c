@@ -62,14 +62,19 @@ static void printMeta(int isPlaying){
 
 // --- Persistent stream: emits immediately on change (via MediaRemote
 //     notifications) plus a 1s heartbeat for elapsed drift / missed events. ---
-static void streamTick(void){
-    if(!gGetInfo) return;
-    if(gGetPID) gGetPID(dispatch_get_main_queue(), ^(int pid){ gPid=pid; });
+static void emitInfo(void){
     gGetInfo(dispatch_get_main_queue(), ^(CFDictionaryRef info){
         fillFrom(info);
         if(gPlaying<0 && gGetPlaying){ gGetPlaying(dispatch_get_main_queue(), ^(Boolean p){ printMeta(p?1:0); }); }
         else printMeta(gPlaying);
     });
+}
+static void streamTick(void){
+    if(!gGetInfo) return;
+    // Fetch the PID first, then the info *inside* its callback, so `pid` is current
+    // for this emit instead of lagging one tick behind (it's set asynchronously).
+    if(gGetPID) gGetPID(dispatch_get_main_queue(), ^(int pid){ gPid=pid; emitInfo(); });
+    else emitInfo();
 }
 static void notifCallback(CFNotificationCenterRef c, void* observer, CFNotificationName name,
                           const void* object, CFDictionaryRef userInfo){

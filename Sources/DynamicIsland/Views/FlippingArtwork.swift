@@ -29,7 +29,11 @@ struct FlippingArtwork: View {
         thumb
             .rotation3DEffect(.degrees(angle), axis: (x: 0, y: 1, z: 0), perspective: 0.6)
             .onAppear { if !started { shown = image; started = true } }
-            .onChange(of: token) { _, _ in flip() }
+            .onChange(of: token) { _, _ in
+                // First real cover (placeholder → image) just appears; only an actual
+                // track change — when we already show a cover — does the flip.
+                if shown == nil { shown = image } else { flip() }
+            }
     }
 
     private func flip() {

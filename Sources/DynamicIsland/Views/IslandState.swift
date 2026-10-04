@@ -4,7 +4,6 @@ import SwiftUI
 /// the island expands).
 @MainActor
 final class IslandState: ObservableObject {
-    @Published var expanded = false
     @Published var metrics: NotchMetrics
 
     /// Battery %, shown briefly as a "charging" flourish after plugging in.
